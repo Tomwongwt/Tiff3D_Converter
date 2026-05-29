@@ -9,13 +9,15 @@
 ## 功能特性
 
 - **GUI 界面**（Tkinter），方便参数配置和预览
+- **Z 驱动处理模式** — 只需设置 Z 切片数，每文件的时间点数自动检测
+- 可选 **Fixed 复选框**，手动指定每文件固定 volume 数量
 - 读取 ScanImage 生成的 BigTIFF 文件（Z-fast, T-slow 帧顺序）
 - 自动从 TIFF 头部检测 ScanImage 元数据（Z 切片数、Z 步长）
 - 支持三种输出格式：
   - **OME-TIFF** — 4D (T,Z,Y,X) 堆栈，含 OME-XML 元数据，可在 Imaris 中打开
   - **IMS (.ims)** — Imaris 原生格式（需要捆绑的 `ImarisConvertBioformats`）
   - **2D-TIFF Series** — 每层一个文件 `name_T####_Z####.tif`
-- 优雅处理不完整的最后一个文件 — 自动截断到最近的 Z 整数倍
+- 优雅处理不完整文件 — 自动截断到 Z 整数倍，不会报错
 
 ## 环境要求
 
@@ -40,7 +42,7 @@ python tiff3d_gui.py
 1. 选择包含 `.tif`/`.tiff` 文件的**输入文件夹**
 2. 配置**参数**：
    - **Z 切片数** — 如果可用，自动从 ScanImage 元数据中检测
-   - **每文件时间点数** — 每个 TIFF 文件包含的 volume 数量
+   - **每文件时间点数** — 自动检测（勾选 **Fixed** 可手动设置）
    - **Z 步长 (µm)** — Z 方向的体素大小
    - **XY 像素尺寸 (µm)** — 自动或手动
 3. 选择**输出文件夹**和**输出名称**
@@ -49,20 +51,20 @@ python tiff3d_gui.py
 
 ### 库调用
 
+**自动模式**（推荐）— 只需指定 Z，自动检测每文件的 T：
+
 ```python
 import reader
 import converter
 import tiff2d_writer
 
-# 构建转换计划
+# Z 驱动模式：t_per_file 可选，自动从 n_frames // Z 计算
 plan = converter.ConversionPlan.from_directory(
-    "path/to/tiffs", z_per_volume=21, t_per_file=10
+    "path/to/tiffs", z_per_volume=21
 )
 
-# 检查一致性
 issues = plan.check_consistency()
 
-# 写入 OME-TIFF
 tiff2d_writer.write_ome_tiff(
     "output.ome.tif",
     plan.shape,
@@ -70,6 +72,14 @@ tiff2d_writer.write_ome_tiff(
     plan.iter_timepoints(),
     xy_pixel_um=0.9,
     z_step_um=2.0,
+)
+```
+
+**固定 T 模式** — 强制指定每文件 volume 数量：
+
+```python
+plan = converter.ConversionPlan.from_directory(
+    "path/to/tiffs", z_per_volume=21, t_per_file=10
 )
 ```
 
@@ -96,13 +106,15 @@ Frame Z: T1 Z0
 
 ## 不完整文件处理
 
-如果最后一个 TIFF 文件的帧数少于预期（例如采集提前停止），转换器会：
+如果 TIFF 文件的帧数不是 Z 的整数倍（例如采集在某个 volume 中途停止），转换器会：
 
 - 截断到最大的 Z 切片整数倍
 - 丢弃尾部不完整帧并给出警告
 - 跳过滤帧数少于一个完整 Z volume 的文件
 
 不会报错 — 转换将使用可用的完整 volumes 继续进行。
+
+使用**固定 T 模式**时，如果文件检测到的 T 与预期值不同，转换器也会发出警告，但仍会按实际可用数据进行处理。
 
 ## 打包（Windows EXE）
 
