@@ -97,6 +97,8 @@ class Tiff3dConverterApp:
             self.z_var.set(cfg["z_slices"])
         if cfg.get("t_per_file"):
             self.t_var.set(cfg["t_per_file"])
+        if cfg.get("fixed_t"):
+            self.fixed_t_var.set(True)
         if cfg.get("z_step"):
             self.zstep_var.set(cfg["z_step"])
 
@@ -111,6 +113,7 @@ class Tiff3dConverterApp:
         try:
             self._cfg["z_slices"] = self.z_var.get()
             self._cfg["t_per_file"] = self.t_var.get()
+            self._cfg["fixed_t"] = self.fixed_t_var.get()
             self._cfg["z_step"] = self.zstep_var.get()
         except tk.TclError:
             pass
@@ -166,6 +169,7 @@ class Tiff3dConverterApp:
 
         self.z_var = tk.IntVar(value=21)
         self.t_var = tk.IntVar(value=10)
+        self.fixed_t_var = tk.BooleanVar(value=False)
         self.zstep_var = tk.DoubleVar(value=2.0)
         self.xypix_var = tk.StringVar(value="auto")
 
@@ -174,9 +178,14 @@ class Tiff3dConverterApp:
         ttk.Label(row1, text="Z slices per volume:").pack(side=tk.LEFT)
         ttk.Spinbox(row1, textvariable=self.z_var, from_=1, to=999, width=8).pack(
             side=tk.LEFT, padx=4)
+
         ttk.Label(row1, text="Time points per file:").pack(side=tk.LEFT, padx=(16, 0))
-        ttk.Spinbox(row1, textvariable=self.t_var, from_=1, to=9999, width=8).pack(
-            side=tk.LEFT, padx=4)
+        self.t_spinbox = ttk.Spinbox(row1, textvariable=self.t_var, from_=1, to=9999, width=8)
+        self.t_spinbox.pack(side=tk.LEFT, padx=4)
+        self.fixed_cb = ttk.Checkbutton(
+            row1, text="Fixed", variable=self.fixed_t_var,
+            command=self._on_fixed_t_toggle)
+        self.fixed_cb.pack(side=tk.LEFT, padx=(2, 0))
 
         row2 = ttk.Frame(frame)
         row2.pack(fill=tk.X, pady=2)
@@ -186,7 +195,10 @@ class Tiff3dConverterApp:
         ttk.Entry(row2, textvariable=self.xypix_var, width=8).pack(side=tk.LEFT, padx=4)
         ttk.Label(row2, text="(auto=from metadata)").pack(side=tk.LEFT, padx=4)
 
-        for var in (self.z_var, self.t_var, self.zstep_var):
+        # Apply initial toggle state
+        self._on_fixed_t_toggle()
+
+        for var in (self.z_var, self.t_var, self.zstep_var, self.fixed_t_var):
             var.trace_add("write", lambda *_: self._update_preview())
 
     def _build_output_section(self, parent):
@@ -298,6 +310,14 @@ class Tiff3dConverterApp:
             self.out_dir_var.set(d)
             self._save_state()
 
+    def _on_fixed_t_toggle(self):
+        """Enable/disable the time points spinbox based on checkbox."""
+        if self.fixed_t_var.get():
+            self.t_spinbox.config(state="normal")
+        else:
+            self.t_spinbox.config(state="disabled")
+        self._update_preview()
+
     def _select_all(self):
         self.file_listbox.select_set(0, tk.END)
 
@@ -321,10 +341,11 @@ class Tiff3dConverterApp:
 
         try:
             z_per = self.z_var.get()
-            t_per = self.t_var.get()
         except tk.TclError:
             self.preview_var.set("Invalid parameter values.")
             return
+
+        fixed_t = self.fixed_t_var.get()
 
         try:
             info = reader.read_tiff_info(selected[0])
@@ -335,18 +356,36 @@ class Tiff3dConverterApp:
         n_frames = info["n_frames"]
         y_size, x_size = info["shape"]
         dtype = info["dtype"]
-        expected = z_per * t_per
+        actual_t = n_frames // z_per
+        remainder = n_frames % z_per
 
         lines = [
             f"Files selected: {len(selected)}",
             f"Per file: {n_frames} frames ({y_size} x {x_size}, {dtype})",
-            f"Layout: {z_per} Z x {t_per} T = {expected} frames/file",
         ]
-        if n_frames != expected:
-            lines.append(
-                f"WARNING: {n_frames} frames/file != {expected} ({z_per}Z x {t_per}T)")
+
+        if fixed_t:
+            try:
+                t_per = self.t_var.get()
+            except tk.TclError:
+                self.preview_var.set("Invalid parameter values.")
+                return
+            expected = z_per * t_per
+            lines.append(f"Mode: Fixed — {z_per} Z x {t_per} T = {expected} frames/file")
+            if n_frames != expected:
+                lines.append(
+                    f"WARNING: {n_frames} frames != {expected} ({z_per}Z x {t_per}T)")
         else:
-            total_t = len(selected) * t_per
+            lines.append(f"Mode: Auto (Z={z_per}) — {actual_t} T detected")
+
+        if remainder != 0:
+            lines.append(
+                f"WARNING: {n_frames} frames not a multiple of Z={z_per}; "
+                f"{remainder} trailing frame(s) will be dropped")
+
+        # Estimate output
+        if actual_t > 0:
+            total_t = len(selected) * actual_t
             lines.append(
                 f"Output: {total_t} time points x {z_per} Z slices "
                 f"x {y_size} x {x_size}")
@@ -377,7 +416,7 @@ class Tiff3dConverterApp:
 
         try:
             z_per = self.z_var.get()
-            t_per = self.t_var.get()
+            t_per = self.t_var.get() if self.fixed_t_var.get() else None
             z_step = self.zstep_var.get()
             xy_str = self.xypix_var.get()
             xy_pixel = float(xy_str) if xy_str != "auto" else 0.9005
@@ -410,7 +449,8 @@ class Tiff3dConverterApp:
                 msg += f"  {os.path.basename(fp)}: {n} frames\n"
             if len(issues) > 5:
                 msg += f"  ... and {len(issues) - 5} more\n"
-            msg += f"\nExpected {z_per * t_per} frames per file."
+            if t_per is not None:
+                msg += f"\nExpected {z_per * t_per} frames per file."
             msg += "\n\nContinue anyway?"
             if not messagebox.askyesno("Frame count mismatch", msg):
                 return

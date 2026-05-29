@@ -51,10 +51,10 @@ class ConversionPlan:
     time points, so that incomplete final files are handled gracefully.
     """
 
-    def __init__(self, filepaths, z_per_volume, t_per_file, y_size, x_size, dtype):
+    def __init__(self, filepaths, z_per_volume, t_per_file=None, y_size=512, x_size=512, dtype="uint16"):
         self.filepaths = list(filepaths)
         self.z_per_volume = z_per_volume
-        self.t_per_file = t_per_file  # expected time points per file
+        self.t_per_file = t_per_file  # None = auto-detect per file
         self.y_size = y_size
         self.x_size = x_size
         self.dtype = dtype
@@ -66,37 +66,53 @@ class ConversionPlan:
         if self.total_t == 0:
             logger.warning("No usable time points found across all files")
 
+        mode = "auto-detect" if t_per_file is None else f"{t_per_file}T fixed"
         logger.info(f"ConversionPlan: {len(filepaths)} file(s), "
-                     f"{self.total_t} TP x {z_per_volume} Z, "
+                     f"{self.total_t} TP x {z_per_volume} Z ({mode}), "
                      f"{y_size}x{x_size}, {dtype}")
 
     def _compute_actual_t(self):
         """Pre-scan files to compute actual time points per file."""
         actual_t_list = []
-        expected = self.z_per_volume * self.t_per_file
+        expected = self.z_per_volume * self.t_per_file if self.t_per_file else None
         for fp in self.filepaths:
             try:
                 info = reader.read_tiff_info(fp)
                 n_frames = info["n_frames"]
                 actual_t = n_frames // self.z_per_volume
+                remainder = n_frames % self.z_per_volume
+
                 if actual_t == 0:
                     logger.warning(
                         f"File {fp} has only {n_frames} frames, "
                         f"less than z_per_volume={self.z_per_volume}; skipping"
                     )
-                if n_frames != expected:
-                    logger.info(
+                    actual_t_list.append(0)
+                    continue
+
+                # Warn if trailing incomplete frames (not a Z multiple)
+                if remainder != 0:
+                    logger.warning(
+                        f"File {fp}: {n_frames} frames not a multiple of "
+                        f"Z={self.z_per_volume}; dropping {remainder} trailing frame(s), "
+                        f"using {actual_t}T"
+                    )
+
+                # Warn if fixed t_per_file constraint is violated
+                if self.t_per_file is not None and actual_t != self.t_per_file:
+                    logger.warning(
                         f"File {fp}: {n_frames} frames -> {actual_t}T "
                         f"(expected {self.t_per_file}T)"
                     )
-                actual_t_list.append(max(actual_t, 0))
+
+                actual_t_list.append(actual_t)
             except Exception:
                 logger.exception(f"Failed to read info for {fp}")
                 actual_t_list.append(0)
         return actual_t_list
 
     @classmethod
-    def from_directory(cls, directory, z_per_volume, t_per_file):
+    def from_directory(cls, directory, z_per_volume, t_per_file=None):
         """Create a plan by scanning a directory."""
         files = reader.scan_directory(directory)
         if not files:
@@ -116,20 +132,20 @@ class ConversionPlan:
         return (self.total_t, self.z_per_volume, self.y_size, self.x_size)
 
     def check_consistency(self):
-        """Verify all files have the expected number of frames.
+        """Verify all files; warn on trailing incomplete frames or constraint violations.
 
         Uses pre-scanned values from _compute_actual_t().
         """
-        expected = self.z_per_volume * self.t_per_file
+        expected = self.z_per_volume * self.t_per_file if self.t_per_file else None
         issues = []
         for fp, actual_t in zip(self.filepaths, self._file_actual_t):
+            n_frames = actual_t * self.z_per_volume
             if actual_t == 0:
                 issues.append((fp, 0))
                 logger.warning(
                     f"Skipping file with insufficient frames: {fp}"
                 )
-            elif actual_t != self.t_per_file:
-                n_frames = actual_t * self.z_per_volume
+            elif self.t_per_file is not None and actual_t != self.t_per_file:
                 issues.append((fp, n_frames))
                 logger.warning(
                     f"Frame count mismatch: {fp} has "
