@@ -1,6 +1,10 @@
+[English](README.md) | [中文](README_zh.md)
+
 # Tiff3D Converter
 
 Convert 3D+Time TIFF sequences (typically from ScanImage microscopes) into OME-TIFF, IMS (Imaris), or 2D TIFF series.
+
+© 2026 Tom Wong - Tsinghua University. Powered by DeepSeek & Claude Code.
 
 ## Features
 
@@ -113,4 +117,6 @@ Bundle `ImarisConvertBioformats` for IMS output support by placing it alongside 
 
 ## License
 
-Internal research tool.
+MIT License — see [LICENSE](LICENSE).
+
+© 2026 Tom Wong - Tsinghua University. Powered by DeepSeek & Claude Code.
