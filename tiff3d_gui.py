@@ -238,10 +238,10 @@ class Tiff3dConverterApp:
         self.status_var = tk.StringVar(value="Ready")
         ttk.Label(frame, textvariable=self.status_var, width=40).pack(side=tk.LEFT)
 
-        # Signature
+        # Signature / Credits
         sig_frame = ttk.Frame(parent)
         sig_frame.pack(fill=tk.X, pady=(8, 0))
-        ttk.Label(sig_frame, text="Tom Wong - Tsinghua University",
+        ttk.Label(sig_frame, text="Tom Wong - Tsinghua University  |  Powered by DeepSeek & Claude Code",
                   foreground="gray").pack(side=tk.RIGHT)
 
     # ---- Callbacks ---------------------------------------------------------
