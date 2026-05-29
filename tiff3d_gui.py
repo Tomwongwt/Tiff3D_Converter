@@ -133,6 +133,7 @@ class Tiff3dConverterApp:
         self._build_output_section(main)
         self._build_preview_section(main)
         self._build_action_section(main)
+        self._on_fixed_t_toggle()  # apply initial toggle state after all widgets exist
 
     def _build_input_section(self, parent):
         frame = ttk.LabelFrame(parent, text="Input", padding=8)
@@ -195,10 +196,7 @@ class Tiff3dConverterApp:
         ttk.Entry(row2, textvariable=self.xypix_var, width=8).pack(side=tk.LEFT, padx=4)
         ttk.Label(row2, text="(auto=from metadata)").pack(side=tk.LEFT, padx=4)
 
-        # Apply initial toggle state
-        self._on_fixed_t_toggle()
-
-        for var in (self.z_var, self.t_var, self.zstep_var, self.fixed_t_var):
+        for var in (self.z_var, self.t_var, self.zstep_var):
             var.trace_add("write", lambda *_: self._update_preview())
 
     def _build_output_section(self, parent):
