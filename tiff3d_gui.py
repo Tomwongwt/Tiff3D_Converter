@@ -43,7 +43,9 @@ def _save_config(data):
 
 # ---- Logging ---------------------------------------------------------------
 
-LOG_FILE = os.path.join(BASE_DIR, f"converter_{datetime.now():%Y%m%d_%H%M%S}.log")
+LOG_DIR = os.path.join(BASE_DIR, "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, f"converter_{datetime.now():%Y%m%d_%H%M%S}.log")
 
 logging.basicConfig(
     level=logging.INFO,
